@@ -11,13 +11,14 @@ import { ethers } from "ethers";
 // ============================================================================
 
 // PASTE ALAMAT CONTRACT AUTH YANG BARU DI SINI
-const CONTRACT_ADDRESS = "0xEB34880904EC30808f2eF0559869B547f83753aD"; 
+const CONTRACT_ADDRESS = "0xB564eE38F696ce3EC7C547A36F87Cc1660e9d795"; 
 
-// ABI DIUPDATE: Mengubah parameter '_username' menjadi 'bytes32 _usernameHash'
+// ABI DIUPDATE: register dikembalikan ke bytes32, dan ditambahkan fungsi resetUsername
 const AuthABI = [
   "function register(bytes32 _usernameHash, uint256 _passwordHash) public",
   "function login(bytes32 _usernameHash, uint256[2] calldata a, uint256[2][2] calldata b, uint256[2] calldata c, uint256[1] calldata input) public view returns (bool)",
-  "function resetPIN(bytes32 _usernameHash, uint256 _newPasswordHash) public"
+  "function resetPIN(bytes32 _usernameHash, uint256 _newPasswordHash) public",
+  "function resetUsername(bytes32 _newUsernameHash) public"
 ];
 
 function stringToNumericString(str: string) {
@@ -33,7 +34,8 @@ interface AuthProps {
 }
 
 export default function Auth({ onLoginSuccess }: AuthProps) {
-  const [mode, setMode] = useState<"register" | "login" | "reset">("register");
+  // Ditambahkan mode 'reset_username'
+  const [mode, setMode] = useState<"register" | "login" | "reset" | "reset_username">("register");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
@@ -61,10 +63,8 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
       const signer = await connectWallet();
       const contract = new ethers.Contract(CONTRACT_ADDRESS, AuthABI, signer);
 
-      // KUNCI PRIVASI: Mengubah string Username menjadi Hash lokal (anonim)
       const usernameHash = ethers.id(username);
 
-      // Mengirim 'usernameHash' ke Blockchain
       const tx = await contract.register(usernameHash, publicSignals[0]);
       setStatus("3/3: Transaksi dikirim. Menunggu konfirmasi Blockchain...");
       
@@ -74,7 +74,7 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
       setStatus("✅ Pendaftaran Berhasil! Silakan masuk menggunakan PIN Anda.");
     } catch (error: any) {
       console.error(error);
-      setStatus(`❌ Gagal: ${error.reason || "Terjadi kesalahan (Cek console)"}`);
+      setStatus(`❌ Gagal: ${error.reason || "Wallet sudah punya akun / Terjadi kesalahan"}`);
     }
   };
 
@@ -102,13 +102,10 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
       const c = [proof.pi_c[0], proof.pi_c[1]];
       const input = [publicSignals[0]];
 
-      // KUNCI PRIVASI: Hash Username sebelum verifikasi ke Smart Contract
       const usernameHash = ethers.id(username);
-
       const isValid = await contract.login(usernameHash, a, b, c, input);
       
       if (isValid) {
-        // Tetap melempar string username asli ke Dashboard agar tampilannya bagus
         onLoginSuccess(username);
       }
     } catch (error: any) {
@@ -133,9 +130,7 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
       const signer = await connectWallet();
       const contract = new ethers.Contract(CONTRACT_ADDRESS, AuthABI, signer);
 
-      // KUNCI PRIVASI: Hash Username
       const usernameHash = ethers.id(username);
-
       const tx = await contract.resetPIN(usernameHash, publicSignals[0]);
       setStatus("3/3: Transaksi dikirim. Menunggu konfirmasi Blockchain...");
       
@@ -149,6 +144,32 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
     }
   };
 
+  // 🔒 FUNGSI BARU: Mereset Username secara anonim dari blockchain
+  const handleResetUsername = async () => {
+    if (!username.trim()) {
+      setStatus("❌ Username baru tidak boleh kosong!");
+      return;
+    }
+    setStatus("1/2: Menyiapkan tanda tangan MetaMask...");
+    try {
+      const signer = await connectWallet();
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, AuthABI, signer);
+
+      const newUsernameHash = ethers.id(username);
+      
+      setStatus("2/2: Menunggu konfirmasi Blockchain...");
+      const tx = await contract.resetUsername(newUsernameHash);
+      
+      await tx.wait();
+      setMode("login");
+      setUsername("");
+      setStatus("✅ Username Baru Berhasil Disimpan! Silakan coba login.");
+    } catch (error: any) {
+      console.error(error);
+      setStatus(`❌ Gagal: ${error.reason || "Pastikan wallet ini sudah terdaftar / Username baru sudah terpakai!"}`);
+    }
+  };
+
   return (
     <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-100">
       <div className="text-center mb-8">
@@ -157,41 +178,57 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
         <p className="text-slate-500 text-sm mt-1">Sistem Keanggotaan Berbasis Web3 (ZKP)</p>
       </div>
 
+      {/* INPUT USERNAME (Muncul di semua mode) */}
       <div className="mb-4">
-        <label className="block mb-2 text-sm font-bold text-slate-700">Username Anggota</label>
+        <label className="block mb-2 text-sm font-bold text-slate-700">
+          {mode === "reset_username" ? "Buat Username Baru" : "Username Anggota"}
+        </label>
         <input
           type="text"
           className="w-full border border-slate-300 p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 font-medium"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          placeholder="Masukkan username Anda..."
+          placeholder={mode === "reset_username" ? "Masukkan nama baru..." : "Masukkan username Anda..."}
         />
       </div>
 
-      <div className="mb-6">
-        <label className="block mb-2 text-sm font-bold text-slate-700">
-          {mode === "register" ? "Buat PIN Rahasia Baru" : mode === "login" ? "Masukkan PIN Anggota" : "Masukkan PIN Baru"}
-        </label>
-        <input
-          type="password"
-          className="w-full border border-slate-300 p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 font-medium tracking-widest"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder={mode === "login" ? "••••••" : "Buat PIN baru..."}
-        />
-      </div>
+      {/* INPUT PIN (Sembunyikan khusus di mode reset_username) */}
+      {mode !== "reset_username" && (
+        <div className="mb-6">
+          <label className="block mb-2 text-sm font-bold text-slate-700">
+            {mode === "register" ? "Buat PIN Rahasia Baru" : mode === "login" ? "Masukkan PIN Anggota" : "Masukkan PIN Baru"}
+          </label>
+          <input
+            type="password"
+            className="w-full border border-slate-300 p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 font-medium tracking-widest"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder={mode === "login" ? "••••••" : "Buat PIN baru..."}
+          />
+        </div>
+      )}
 
+      {/* TOMBOL UTAMA KONDISIONAL */}
       <button 
-        onClick={mode === "register" ? handleRegister : mode === "login" ? handleLogin : handleReset}
+        onClick={
+          mode === "register" ? handleRegister : 
+          mode === "login" ? handleLogin : 
+          mode === "reset" ? handleReset : handleResetUsername
+        }
         className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-xl hover:bg-blue-700 transition-all active:scale-95 shadow-md hover:shadow-lg"
       >
-        {mode === "register" ? "Daftar (Koneksi MetaMask)" : mode === "login" ? "Akses Perpustakaan" : "Simpan PIN Baru (MetaMask)"}
+        {
+          mode === "register" ? "Daftar (Koneksi MetaMask)" : 
+          mode === "login" ? "Akses Perpustakaan" : 
+          mode === "reset" ? "Simpan PIN Baru (MetaMask)" : "Simpan Username Baru (MetaMask)"
+        }
       </button>
 
+      {/* NAVIGASI MENU */}
       <div className="flex flex-col gap-2 text-center mt-6 border-t border-slate-100 pt-4">
         {mode !== "login" && (
           <button onClick={() => { setMode("login"); setStatus(""); setPassword(""); setUsername(""); }} className="text-sm text-blue-600 font-semibold hover:underline">
-            Sudah ingat PIN / Punya akun? Masuk di sini
+            Sudah ingat akun & PIN? Masuk di sini
           </button>
         )}
         {mode !== "register" && (
@@ -204,8 +241,14 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
             Lupa PIN? Reset dengan Kunci Dompet
           </button>
         )}
+        {mode !== "reset_username" && (
+          <button onClick={() => { setMode("reset_username"); setStatus(""); setPassword(""); setUsername(""); }} className="text-xs text-slate-400 font-medium hover:text-slate-600 hover:underline">
+            Lupa Nama Akun (Username)? Ganti Baru via Wallet
+          </button>
+        )}
       </div>
 
+      {/* STATUS RESPONS DARI BLOCKCHAIN */}
       {status && (
         <div className="mt-5 p-3 rounded-xl bg-slate-50 border border-slate-100">
           <p className={`text-center text-xs font-bold ${status.includes('❌') ? 'text-red-600' : 'text-emerald-600'}`}>

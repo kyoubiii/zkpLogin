@@ -11,7 +11,7 @@ import { ethers } from "ethers";
 // ============================================================================
 
 // PASTE ALAMAT CONTRACT AUTH YANG BARU DI SINI
-const CONTRACT_ADDRESS = "0xB91f9a8996D71b09a9bfC2632E7B28AF413acbE9"; 
+const CONTRACT_ADDRESS = "0xEB34880904EC30808f2eF0559869B547f83753aD"; 
 
 // ABI DIUPDATE: Mengubah parameter '_username' menjadi 'bytes32 _usernameHash'
 const AuthABI = [

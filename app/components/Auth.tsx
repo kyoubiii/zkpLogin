@@ -11,12 +11,13 @@ import { ethers } from "ethers";
 // ============================================================================
 
 // PASTE ALAMAT CONTRACT AUTH YANG BARU DI SINI
-const CONTRACT_ADDRESS = "0x4afAeBc39F732671914fd6d5677eC698F42Ad641"; 
+const CONTRACT_ADDRESS = "0xB91f9a8996D71b09a9bfC2632E7B28AF413acbE9"; 
 
+// ABI DIUPDATE: Mengubah parameter '_username' menjadi 'bytes32 _usernameHash'
 const AuthABI = [
-  "function register(string memory _username, uint256 _passwordHash) public",
-  "function login(string memory _username, uint256[2] calldata a, uint256[2][2] calldata b, uint256[2] calldata c, uint256[1] calldata input) public view returns (bool)",
-  "function resetPIN(string memory _username, uint256 _newPasswordHash) public"
+  "function register(bytes32 _usernameHash, uint256 _passwordHash) public",
+  "function login(bytes32 _usernameHash, uint256[2] calldata a, uint256[2][2] calldata b, uint256[2] calldata c, uint256[1] calldata input) public view returns (bool)",
+  "function resetPIN(bytes32 _usernameHash, uint256 _newPasswordHash) public"
 ];
 
 function stringToNumericString(str: string) {
@@ -27,8 +28,6 @@ function stringToNumericString(str: string) {
   return result.substring(0, 30);
 }
 
-// Props: Fungsi ini dilempar dari parent (page.tsx) agar komponen ini bisa
-// memberi tahu parent bahwa "Hei, user ini berhasil login!"
 interface AuthProps {
   onLoginSuccess: (username: string) => void;
 }
@@ -62,7 +61,11 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
       const signer = await connectWallet();
       const contract = new ethers.Contract(CONTRACT_ADDRESS, AuthABI, signer);
 
-      const tx = await contract.register(username, publicSignals[0]);
+      // KUNCI PRIVASI: Mengubah string Username menjadi Hash lokal (anonim)
+      const usernameHash = ethers.id(username);
+
+      // Mengirim 'usernameHash' ke Blockchain
+      const tx = await contract.register(usernameHash, publicSignals[0]);
       setStatus("3/3: Transaksi dikirim. Menunggu konfirmasi Blockchain...");
       
       await tx.wait(); 
@@ -99,10 +102,13 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
       const c = [proof.pi_c[0], proof.pi_c[1]];
       const input = [publicSignals[0]];
 
-      const isValid = await contract.login(username, a, b, c, input);
+      // KUNCI PRIVASI: Hash Username sebelum verifikasi ke Smart Contract
+      const usernameHash = ethers.id(username);
+
+      const isValid = await contract.login(usernameHash, a, b, c, input);
       
       if (isValid) {
-        // Jika sukses, panggil fungsi dari parent dan kirim nama usernya
+        // Tetap melempar string username asli ke Dashboard agar tampilannya bagus
         onLoginSuccess(username);
       }
     } catch (error: any) {
@@ -127,7 +133,10 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
       const signer = await connectWallet();
       const contract = new ethers.Contract(CONTRACT_ADDRESS, AuthABI, signer);
 
-      const tx = await contract.resetPIN(username, publicSignals[0]);
+      // KUNCI PRIVASI: Hash Username
+      const usernameHash = ethers.id(username);
+
+      const tx = await contract.resetPIN(usernameHash, publicSignals[0]);
       setStatus("3/3: Transaksi dikirim. Menunggu konfirmasi Blockchain...");
       
       await tx.wait(); 
